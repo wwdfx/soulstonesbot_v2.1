@@ -32,9 +32,31 @@ def reconnect_db(func):
             return await func(*args, **kwargs)
     return wrapper
 
+# Ensure message_counts table exists
+cur.execute('''
+    CREATE TABLE IF NOT EXISTS message_counts (
+        user_id BIGINT PRIMARY KEY,
+        message_count INTEGER NOT NULL DEFAULT 0
+    )
+''')
+
 @reconnect_db
-async def set_user_role(user_id, role):
-    cur.execute('INSERT INTO users (user_id, role) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET role = %s', (user_id, role, role))
+async def get_message_count(user_id):
+    cur.execute('SELECT message_count FROM message_counts WHERE user_id = %s', (user_id,))
+    result = cur.fetchone()
+    return result['message_count'] if result else 0
+
+@reconnect_db
+async def increment_message_count(user_id, count=1):
+    current_count = await get_message_count(user_id)
+    new_count = current_count + count
+    cur.execute('INSERT INTO message_counts (user_id, message_count) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET message_count = %s', (user_id, new_count, new_count))
+    conn.commit()
+    return new_count
+
+@reconnect_db
+async def reset_message_count(user_id):
+    cur.execute('UPDATE message_counts SET message_count = 0 WHERE user_id = %s', (user_id,))
     conn.commit()
 
 # Create tables if they do not exist

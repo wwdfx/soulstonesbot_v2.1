@@ -12,30 +12,38 @@ from utils import can_request_reading, generate_missions, get_user_rank, reconne
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         message_text = update.message.text
-        target_group_id = -1002142915618  # Adjust this ID to your target group
+        target_group_id_1 = -1002142915618  # Adjust this ID to your target group
+        target_group_id_2 = -1001996636325  # Other active users chat ID
 
         logger.info(f"Received message in group {update.message.chat_id}: {message_text[:50]}")
-        if len(message_text) >= 500 and update.message.chat_id == target_group_id:
-            user_id = update.message.from_user.id
+        
+        user_id = update.message.from_user.id
+
+        if update.message.chat_id == target_group_id_1 and len(message_text) >= 500:
             user_mention = update.message.from_user.username or update.message.from_user.first_name
             mention_text = f"@{user_mention}" if update.message.from_user.username else user_mention
 
-            # Update the user's symbol count
-            symbol_count = len(message_text)
-            cur.execute('INSERT INTO user_symbols (user_id, symbols_count) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET symbols_count = user_symbols.symbols_count + %s', (user_id, symbol_count, symbol_count))
-            conn.commit()
+            user_rank = await get_user_rank(user_id)
+            rank_rewards = {
+                "👦🏻 Смертный": 5,
+                "😎 Новичок": 15,
+                "😼 Новоприбывший Охотник": 30,
+                "🧐 Опытный охотник": 50,
+                "🫡 Лидер миссий Института": 85,
+                "🧑🏻‍✈️ Лидер Института": 135,
+                "🧑🏻‍⚖️ Кандидат в Инквизиторы": 200,
+                "🤴🏻 Инквизитор": 300
+            }
 
-            # Get the user's rank and the corresponding reward
-            total_symbols = await get_user_symbols(user_id)
-            user_rank, reward = None, 5  # Default values
-            for rank, min_symbols, max_symbols, rank_reward in RANKS:
-                if min_symbols <= total_symbols < max_symbols:
-                    user_rank = rank
-                    reward = rank_reward
-                    break
-
+            reward = rank_rewards.get(user_rank, 5)
             new_balance = await update_balance(user_id, reward)
-            await update.message.reply_text(f"💎 {mention_text}, ваш пост зачтён. Вам начислено +{reward} к камням душ. Текущий баланс: {new_balance}💎. Ранг: {user_rank}")
+            await update.message.reply_text(f"💎 {mention_text}, ваш пост зачтён. Вам начислено +{reward} к камням душ. Текущий баланс: {new_balance}💎.")
+
+        if update.message.chat_id == target_group_id_2:
+            message_count = await increment_message_count(user_id)
+            if message_count % 200 == 0:
+                await update_balance(user_id, 150)
+                await update.message.reply_text(f"🎉 Вы отправили {message_count} сообщений и получили 150 Камней душ! Текущий баланс: {await get_balance(user_id)}💎.")
 
 @reconnect_db
 async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -337,7 +345,7 @@ async def receive_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Пожалуйста, введите корректное число.")
         return PROMOTE_USER_ID
 
-    await set_user_role(target_user_id, 'admin')
+    await get_user_role(target_user_id, 'admin')
     await update.message.reply_text(f"Пользователь {target_user_id} повышен до администратора.")
     return ConversationHandler.END
 
