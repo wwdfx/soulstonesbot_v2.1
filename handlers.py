@@ -1,14 +1,12 @@
 from asyncio.log import logger
-from datetime import datetime, timedelta
+import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 import random
 import asyncio
-from database import cur, conn, reconnect_db, set_user_role
-from models import *
-from utils import can_request_reading, generate_missions, get_user_rank
-
-PROMOTE_USER_ID = range(1)
+from database import *
+from models import get_balance, get_user_role, get_user_symbols, reduce_balance, set_balance, update_balance
+from utils import can_request_reading, generate_missions, get_user_rank, reconnect_db, RANKS
 
 @reconnect_db
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -22,21 +20,22 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_mention = update.message.from_user.username or update.message.from_user.first_name
             mention_text = f"@{user_mention}" if update.message.from_user.username else user_mention
 
-            await update_user_symbols(user_id, len(message_text))
-            user_rank = await get_user_rank(user_id)
+            # Update the user's symbol count
+            symbol_count = len(message_text)
+            cur.execute('INSERT INTO user_symbols (user_id, symbols_count) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET symbols_count = user_symbols.symbols_count + %s', (user_id, symbol_count, symbol_count))
+            conn.commit()
 
-            soulstones_dict = {
-                "Mundane": 5,
-                "Newcomer": 15,
-                "Novice Shadowhunter": 30,
-                "Experienced Shadowhunter": 50,
-                "Missions Leader": 85,
-                "Institute Leader": 135,
-                "Inquisitor": 200
-            }
+            # Get the user's rank and the corresponding reward
+            total_symbols = await get_user_symbols(user_id)
+            user_rank, reward = None, 5  # Default values
+            for rank, min_symbols, max_symbols, rank_reward in RANKS:
+                if min_symbols <= total_symbols < max_symbols:
+                    user_rank = rank
+                    reward = rank_reward
+                    break
 
-            new_balance = await update_balance(user_id, soulstones_dict[user_rank])
-            await update.message.reply_text(f"💎 {mention_text}, ваш пост зачтён. Вам начислено +{soulstones_dict[user_rank]} к камням душ. Текущий баланс: {new_balance}💎.")
+            new_balance = await update_balance(user_id, reward)
+            await update.message.reply_text(f"💎 {mention_text}, ваш пост зачтён. Вам начислено +{reward} к камням душ. Текущий баланс: {new_balance}💎. Ранг: {user_rank}")
 
 @reconnect_db
 async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -49,7 +48,7 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @reconnect_db
 async def checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    today = datetime.now()
+    today = datetime.datetime.now()
     cur.execute('SELECT streak, last_checkin FROM checkin_streak WHERE user_id = %s', (user_id,))
     result = cur.fetchone()
 
@@ -62,22 +61,22 @@ async def checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # Check if the streak is broken
-        if today - last_checkin > timedelta(days=1):
+        if today - last_checkin > datetime.timedelta(days=1):
             streak = 1
             reward = 25
-            image_path = image_path['loss']
+            image_path = 'img/lossStreak.png'
             await update.message.reply_photo(photo=open(image_path, 'rb'), caption="К сожалению, вы прервали череду ежедневных входов и получили 25 Камней душ.")
         else:
             streak += 1
             if streak > 7:
                 streak = 7  # Cap streak at 7
             reward = 25 * streak
-            image_path = image_path.get(streak, image_path[7])  # Default to day 7 image if streak > 7
+            image_path = f'img/check{streak}.png'
             await update.message.reply_photo(photo=open(image_path, 'rb'), caption=f"Вы выполнили ежедневный вход {streak} дней подряд и получили {reward} Камней душ!")
     else:
         streak = 1
         reward = 25
-        image_path = image_path[1]
+        image_path = 'img/check1.png'
         await update.message.reply_photo(photo=open(image_path, 'rb'), caption=f"Вы выполнили ежедневный вход 1 день подряд и получили 25 Камней душ!")
 
     # Update the last check-in date and streak
@@ -166,18 +165,18 @@ async def reading_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await asyncio.sleep(2)
 
     reading = random.choice(readings)
-    await update.message.reply_photo(photo=open('./img/reading.png', 'rb'), caption=f"Ваше гадание на сегодня:\n\n{reading}")
+    await update.message.reply_photo(photo=open('img/reading.png', 'rb'), caption=f"Ваше гадание на сегодня:\n\n{reading}")
 
 @reconnect_db
 async def rockpaperscissors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     cur.execute('SELECT last_play FROM last_game WHERE user_id = %s', (user_id,))
     result = cur.fetchone()
-    now = datetime.now()
+    now = datetime.datetime.now()
 
     if result:
         last_play = result['last_play']
-        if now - last_play < timedelta(minutes=10):
+        if now - last_play < datetime.timedelta(minutes=10):
             await update.message.reply_text("Вы можете играть только раз в 10 минут. Попробуйте позже.")
             return
 
@@ -245,7 +244,7 @@ async def play_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"Ничья! Ваш баланс остался прежним: {await get_balance(user_id)}💎.")
 
     # Update the last play time
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     cur.execute('INSERT INTO last_game (user_id, last_play) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET last_play = %s', (user_id, now, now))
     conn.commit()
 
@@ -316,6 +315,8 @@ async def set_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     new_balance = await set_balance(int(target_user_id), amount)
     await update.message.reply_text(f"Баланс пользователя {target_user_id} установлен на {amount} Камней душ. Новый баланс: {new_balance}💎.")
 
+PROMOTE_USER_ID = range(1)
+
 @reconnect_db
 async def promote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     super_admin_id = 6505061807  # Replace with your actual super admin ID
@@ -347,7 +348,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @reconnect_db
 async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    today = datetime.now().date()
+    today = datetime.datetime.now().date()
 
     # Check if user has already attempted 3 missions today
     cur.execute('SELECT attempts FROM mission_attempts WHERE user_id = %s AND date = %s', (user_id, today))
@@ -388,7 +389,7 @@ async def mission_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Check if user has already attempted 3 missions today
-    today = datetime.now().date()
+    today = datetime.datetime.now().date()
     cur.execute('SELECT attempts FROM mission_attempts WHERE user_id = %s AND date = %s', (user_id, today))
     result = cur.fetchone()
     attempts = result['attempts'] if result else 0
@@ -405,8 +406,8 @@ async def mission_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
 
     # Calculate mission end time
-    start_time = datetime.now()
-    end_time = start_time + timedelta(hours=mission['length'])
+    start_time = datetime.datetime.now()
+    end_time = start_time + datetime.timedelta(hours=mission['length'])
 
     # Insert mission into user_missions table
     cur.execute('INSERT INTO user_missions (user_id, mission_id, start_time, end_time) VALUES (%s, %s, %s, %s)', (user_id, mission_id, start_time, end_time))
