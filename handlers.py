@@ -5,7 +5,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 import random
 import asyncio
 from database import *
-from models import get_balance, get_user_role, get_user_symbols, reduce_balance, set_balance, update_balance
+from models import get_balance, get_user_messages, get_user_role, get_user_symbols, reduce_balance, set_balance, update_balance
 from utils import can_request_reading, generate_missions, get_user_rank, reconnect_db, RANKS
 import random
 from questions import questions
@@ -13,28 +13,42 @@ from datetime import datetime, timedelta
 
 active_question = None
 
-@reconnect_db
 async def send_question(context: ContextTypes.DEFAULT_TYPE):
     global active_question
     chat_id = -1001996636325  # Second chat ID
     active_question = random.choice(questions)
     await context.bot.send_message(chat_id=chat_id, text=f"❓ Викторина! Ответьте на вопрос и получите 200 💎 Камней душ! Вопрос: {active_question['question']}")
 
-@reconnect_db
+    # Schedule repeating the question if not answered
+    context.job_queue.run_once(repeat_question, 3600, context=context)
+
+async def repeat_question(context: ContextTypes.DEFAULT_TYPE):
+    global active_question
+    if active_question is not None:
+        chat_id = -1001996636325  # Second chat ID
+        await context.bot.send_message(chat_id=chat_id, text=f"😢 Время вышло! Правильный ответ был: {active_question['answers'][0]}\n\nСледующий вопрос через 2 часа!")
+        active_question = None  # Reset the active question
+        context.job_queue.run_once(send_question, 7200, context=context)
+
 async def answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global active_question
     if active_question is None:
         return
 
-    user_answer = update.message.text.strip()
-    if user_answer.lower() == active_question['answer'].lower():
+    user_answer = update.message.text.strip().lower()
+    correct_answers = [answer.lower() for answer in active_question['answers']]
+
+    if user_answer in correct_answers:
         user_id = update.message.from_user.id
         user_mention = update.message.from_user.username or update.message.from_user.first_name
         mention_text = f"@{user_mention}" if update.message.from_user.username else user_mention
 
         new_balance = await update_balance(user_id, 200)
-        await update.message.reply_text(f"💎 {mention_text}, верный ответ! Щердро сыплю тебе 200 💎 Камней душ! Текущий баланс: {new_balance}💎.")
+        await update.message.reply_text(f"💎 {mention_text}, верный ответ! Щедро сыплю тебе 200 💎 Камней душ! Текущий баланс: {new_balance}💎.")
         active_question = None  # Reset the active question
+
+        # Schedule the next question in 2 hours
+        context.job_queue.run_once(send_question, 7200, context=context)
 
 @reconnect_db
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -467,15 +481,15 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_rank = await get_user_rank(user_id)
     user_balance = await get_balance(user_id)
-    total_symbols = await get_user_symbols(user_id)
-    second_chat_message_count = await get_message_count(user_id, -1001996636325)  # Replace with your second chat_id
+    symbols_count = await get_user_symbols(user_id)
+    second_chat_message_count = await get_user_messages(user_id, -1001996636325)
 
     profile_text = (
-        f"👤 Профиль {mention_text}:\n"
-        f"🎖 Ранк: {user_rank}\n"
-        f"💵 Баланс 💎 Камней душ: {user_balance}\n"
-        f"🔣 Символов в рп-чате: {total_symbols}\n"
-        f"✉️ Сообщений в флуд-чате: {second_chat_message_count}"  # Add this line
+        f"Профиль {mention_text}:\n"
+        f"🏅 Ранк: {user_rank}\n"
+        f"💎 Баланс Камней душ: {user_balance}\n"
+        f"🔣 Символов в рп-чате: {symbols_count}\n"
+        f"✉️ Сообщений в флуд-чате: {second_chat_message_count}"
     )
 
     buttons = [
@@ -486,5 +500,3 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Миссии", callback_data="missions")]
     ]
     keyboard = InlineKeyboardMarkup(buttons)
-
-    await update.message.reply_text(profile_text, reply_markup=keyboard)
