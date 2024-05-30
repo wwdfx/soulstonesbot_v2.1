@@ -48,6 +48,12 @@ async def update_user_symbols(user_id, symbols_count):
     conn.commit()
 
 @reconnect_db
+async def get_message_count(user_id, chat_id):
+    cur.execute('SELECT message_count FROM user_messages WHERE user_id = %s AND chat_id = %s', (user_id, chat_id))
+    result = cur.fetchone()
+    return result['message_count'] if result else 0
+
+@reconnect_db
 async def get_user_rank(user_id):
     symbols_count = await get_user_symbols(user_id)
     if symbols_count < 5000:

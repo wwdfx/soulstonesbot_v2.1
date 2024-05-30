@@ -133,3 +133,4 @@ cur.execute('''
         symbols_count INTEGER NOT NULL DEFAULT 0
     )
 ''')
+

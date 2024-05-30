@@ -7,6 +7,34 @@ import asyncio
 from database import *
 from models import get_balance, get_user_role, get_user_symbols, reduce_balance, set_balance, update_balance
 from utils import can_request_reading, generate_missions, get_user_rank, reconnect_db, RANKS
+import random
+from questions import questions
+from datetime import datetime, timedelta
+
+active_question = None
+
+@reconnect_db
+async def send_question(context: ContextTypes.DEFAULT_TYPE):
+    global active_question
+    chat_id = -1001996636325  # Second chat ID
+    active_question = random.choice(questions)
+    await context.bot.send_message(chat_id=chat_id, text=f"❓ Викторина! Ответьте на вопрос и получите 200 💎 Камней душ! Вопрос: {active_question['question']}")
+
+@reconnect_db
+async def answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global active_question
+    if active_question is None:
+        return
+
+    user_answer = update.message.text.strip()
+    if user_answer.lower() == active_question['answer'].lower():
+        user_id = update.message.from_user.id
+        user_mention = update.message.from_user.username or update.message.from_user.first_name
+        mention_text = f"@{user_mention}" if update.message.from_user.username else user_mention
+
+        new_balance = await update_balance(user_id, 200)
+        await update.message.reply_text(f"💎 {mention_text}, верный ответ! Щердро сыплю тебе 200 💎 Камней душ! Текущий баланс: {new_balance}💎.")
+        active_question = None  # Reset the active question
 
 @reconnect_db
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -53,6 +81,14 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     balance = await get_balance(user_id)
     await update.message.reply_text(f"💎 {mention_text}, ваш текущий баланс: {balance}💎.")
 
+# handlers.py
+
+@reconnect_db
+async def get_message_count(user_id, chat_id):
+    cur.execute('SELECT message_count FROM user_messages WHERE user_id = %s AND chat_id = %s', (user_id, chat_id))
+    result = cur.fetchone()
+    return result['message_count'] if result else 0
+
 @reconnect_db
 async def checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -65,7 +101,7 @@ async def checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Check if the user has already checked in today
         if today.date() == last_checkin.date():
-            await update.message.reply_text("Вы уже получали награду за вход сегодня. Повторите попытку завтра.")
+            await update.message.reply_text("⚠️ Вы уже получали награду за вход сегодня. Повторите попытку завтра. ✨")
             return
 
         # Check if the streak is broken
@@ -73,19 +109,19 @@ async def checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             streak = 1
             reward = 25
             image_path = 'img/lossStreak.png'
-            await update.message.reply_photo(photo=open(image_path, 'rb'), caption="К сожалению, вы прервали череду ежедневных входов и получили 25 Камней душ.")
+            await update.message.reply_photo(photo=open(image_path, 'rb'), caption="😔 К сожалению, вы прервали череду ежедневных входов и получили только 25 💎 Камней душ.")
         else:
             streak += 1
             if streak > 7:
                 streak = 7  # Cap streak at 7
             reward = 25 * streak
             image_path = f'img/check{streak}.png'
-            await update.message.reply_photo(photo=open(image_path, 'rb'), caption=f"Вы выполнили ежедневный вход {streak} дней подряд и получили {reward} Камней душ!")
+            await update.message.reply_photo(photo=open(image_path, 'rb'), caption=f"✅ Вы выполнили ежедневный вход {streak} дней подряд и получили {reward} 💎 Камней душ!")
     else:
         streak = 1
         reward = 25
         image_path = 'img/check1.png'
-        await update.message.reply_photo(photo=open(image_path, 'rb'), caption=f"Вы выполнили ежедневный вход 1 день подряд и получили 25 Камней душ!")
+        await update.message.reply_photo(photo=open(image_path, 'rb'), caption=f"✅ Вы выполнили ежедневный вход 1 день подряд и получили 25 💎 Камней душ!")
 
     # Update the last check-in date and streak
     cur.execute('INSERT INTO checkin_streak (user_id, streak, last_checkin) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO UPDATE SET streak = %s, last_checkin = %s', (user_id, streak, today, streak, today))
@@ -162,18 +198,18 @@ readings = [
 async def reading_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if not await can_request_reading(user_id):
-        await update.message.reply_text("Вы уже запросили гадание сегодня. Повторите попытку завтра.")
+        await update.message.reply_text("⚠️ Вы уже запросили гадание сегодня. Повторите попытку завтра.")
         return
 
     if await reduce_balance(user_id, 50) is None:
-        await update.message.reply_text("Недостаточно Камней Душ для запроса гадания.")
+        await update.message.reply_text("⚠️ Недостаточно Камней Душ для запроса гадания.")
         return
 
-    await update.message.reply_text("Камни душ с лёгким треском осыпались на стол. Магнус вскинул на них свой взор, улыбнулся и положил руку на хрустальный шар...")
+    await update.message.reply_text("💎 Камни душ с лёгким треском осыпались на стол. Магнус вскинул на них свой взор, улыбнулся и положил руку на хрустальный шар... 🔮")
     await asyncio.sleep(2)
 
     reading = random.choice(readings)
-    await update.message.reply_photo(photo=open('img/reading.png', 'rb'), caption=f"Ваше гадание на сегодня:\n\n{reading}")
+    await update.message.reply_photo(photo=open('img/reading.png', 'rb'), caption=f"🔮 Ваше гадание на сегодня: 🔮\n\n{reading} 🔮")
 
 @reconnect_db
 async def rockpaperscissors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -185,7 +221,7 @@ async def rockpaperscissors_command(update: Update, context: ContextTypes.DEFAUL
     if result:
         last_play = result['last_play']
         if now - last_play < datetime.timedelta(minutes=10):
-            await update.message.reply_text("Вы можете играть только раз в 10 минут. Попробуйте позже.")
+            await update.message.reply_text("⚠️ Вы можете играть только раз в 10 минут. Попробуйте позже.")
             return
 
     buttons = [
@@ -196,7 +232,7 @@ async def rockpaperscissors_command(update: Update, context: ContextTypes.DEFAUL
         InlineKeyboardButton("500", callback_data="bet_500")
     ]
     keyboard = InlineKeyboardMarkup.from_column(buttons)
-    await update.message.reply_text("Выберите количество Камней душ, которые вы хотите поставить:", reply_markup=keyboard)
+    await update.message.reply_text("📤 Выберите количество Камней душ, которые вы хотите поставить:", reply_markup=keyboard)
 
 @reconnect_db
 async def bet_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -207,7 +243,7 @@ async def bet_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     balance = await get_balance(user_id)
 
     if balance < bet:
-        await query.edit_message_text("У вас недостаточно Камней душ для этой ставки.")
+        await query.edit_message_text("⚠️ У вас недостаточно Камней душ для этой ставки.")
         return
 
     buttons = [
@@ -216,7 +252,7 @@ async def bet_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("✂️", callback_data=f"play_{bet}_scissors")
     ]
     keyboard = InlineKeyboardMarkup.from_row(buttons)
-    await query.edit_message_text("Выберите, что вы хотите выбросить:", reply_markup=keyboard)
+    await query.edit_message_text("✊ Выберите, что вы хотите выбросить:", reply_markup=keyboard)
 
 @reconnect_db
 async def play_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -244,12 +280,12 @@ async def play_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if result == "win":
         new_balance = await update_balance(user_id, bet)
-        await query.edit_message_text(f"Поздравляем! Вы выиграли {bet} Камней душ. Ваш текущий баланс: {new_balance}💎.")
+        await query.edit_message_text(f"🥳 Поздравляем! Вы выиграли {bet} 💎 Камней душ. Ваш текущий баланс: {new_balance}💎.")
     elif result == "lose":
         new_balance = await update_balance(user_id, -bet)
-        await query.edit_message_text(f"Вы проиграли {bet} Камней душ. Ваш текущий баланс: {new_balance}💎.")
+        await query.edit_message_text(f"🥴 Вы проиграли {bet} 💎 Камней душ. Ваш текущий баланс: {new_balance}💎.")
     else:
-        await query.edit_message_text(f"Ничья! Ваш баланс остался прежним: {await get_balance(user_id)}💎.")
+        await query.edit_message_text(f"🤝 Ничья! Ваш баланс остался прежним: {await get_balance(user_id)}💎.")
 
     # Update the last play time
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -260,68 +296,68 @@ async def play_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if await get_user_role(user_id) != 'admin':
-        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
+        await update.message.reply_text("⚠️ У вас нет прав для выполнения этой команды.")
         return
 
     if len(context.args) != 2:
-        await update.message.reply_text("Использование: /addbalance <user_id> <amount>")
+        await update.message.reply_text("⚠️ Использование: /addbalance <user_id> <amount>")
         return
 
     target_user_id, amount = context.args
     try:
         amount = int(amount)
     except ValueError:
-        await update.message.reply_text("Пожалуйста, введите корректное число.")
+        await update.message.reply_text("⚠️ Пожалуйста, введите корректное число.")
         return
 
     new_balance = await update_balance(int(target_user_id), amount)
-    await update.message.reply_text(f"Баланс пользователя {target_user_id} увеличен на {amount} Камней душ. Новый баланс: {new_balance}💎.")
+    await update.message.reply_text(f"⚠️ Баланс пользователя {target_user_id} увеличен на {amount} 💎 Камней душ. Новый баланс: {new_balance}💎.")
 
 @reconnect_db
 async def sub_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if await get_user_role(user_id) != 'admin':
-        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
+        await update.message.reply_text("⚠️ У вас нет прав для выполнения этой команды.")
         return
 
     if len(context.args) != 2:
-        await update.message.reply_text("Использование: /subbalance <user_id> <amount>")
+        await update.message.reply_text("⚠️ Использование: /subbalance <user_id> <amount>")
         return
 
     target_user_id, amount = context.args
     try:
         amount = int(amount)
     except ValueError:
-        await update.message.reply_text("Пожалуйста, введите корректное число.")
+        await update.message.reply_text("⚠️ Пожалуйста, введите корректное число.")
         return
 
     new_balance = await reduce_balance(int(target_user_id), amount)
     if new_balance is None:
-        await update.message.reply_text("Недостаточно Камней душ для выполнения операции.")
+        await update.message.reply_text("⚠️ Недостаточно Камней душ для выполнения операции.")
         return
 
-    await update.message.reply_text(f"Баланс пользователя {target_user_id} уменьшен на {amount} Камней душ. Новый баланс: {new_balance}💎.")
+    await update.message.reply_text(f"⚠️ Баланс пользователя {target_user_id} уменьшен на {amount} 💎 Камней душ. Новый баланс: {new_balance}💎.")
 
 @reconnect_db
 async def set_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if await get_user_role(user_id) != 'admin':
-        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
+        await update.message.reply_text("⚠️ У вас нет прав для выполнения этой команды.")
         return
 
     if len(context.args) != 2:
-        await update.message.reply_text("Использование: /setbalance <user_id> <amount>")
+        await update.message.reply_text("⚠️ Использование: /setbalance <user_id> <amount>")
         return
 
     target_user_id, amount = context.args
     try:
         amount = int(amount)
     except ValueError:
-        await update.message.reply_text("Пожалуйста, введите корректное число.")
+        await update.message.reply_text("⚠️ Пожалуйста, введите корректное число.")
         return
 
     new_balance = await set_balance(int(target_user_id), amount)
-    await update.message.reply_text(f"Баланс пользователя {target_user_id} установлен на {amount} Камней душ. Новый баланс: {new_balance}💎.")
+    await update.message.reply_text(f"⚠️ Баланс пользователя {target_user_id} установлен на {amount} 💎 Камней душ. Новый баланс: {new_balance}💎.")
 
 PROMOTE_USER_ID = range(1)
 
@@ -331,10 +367,10 @@ async def promote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
 
     if user_id != super_admin_id:
-        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
+        await update.message.reply_text("⚠️ У вас нет прав для выполнения этой команды.")
         return ConversationHandler.END
 
-    await update.message.reply_text("Пожалуйста, введите user_id аккаунта, который вы хотите повысить до администратора.")
+    await update.message.reply_text("⚠️ Пожалуйста, введите user_id аккаунта, который вы хотите повысить до администратора.")
     return PROMOTE_USER_ID
 
 @reconnect_db
@@ -342,15 +378,15 @@ async def receive_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         target_user_id = int(update.message.text)
     except ValueError:
-        await update.message.reply_text("Пожалуйста, введите корректное число.")
+        await update.message.reply_text("⚠️ Пожалуйста, введите корректное число.")
         return PROMOTE_USER_ID
 
     await get_user_role(target_user_id, 'admin')
-    await update.message.reply_text(f"Пользователь {target_user_id} повышен до администратора.")
+    await update.message.reply_text(f"❗️ Пользователь {target_user_id} повышен до администратора.")
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Отменено.")
+    await update.message.reply_text("⚠️ Отменено.")
     return ConversationHandler.END
 
 @reconnect_db
@@ -393,7 +429,7 @@ async def mission_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mission = cur.fetchone()
 
     if not mission:
-        await query.edit_message_text("Ошибка: миссия не найдена.")
+        await query.edit_message_text("⚠️ Ошибка: миссия не найдена.")
         return
 
     # Check if user has already attempted 3 missions today
@@ -432,8 +468,15 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_rank = await get_user_rank(user_id)
     user_balance = await get_balance(user_id)
     total_symbols = await get_user_symbols(user_id)
+    second_chat_message_count = await get_message_count(user_id, -1001996636325)  # Replace with your second chat_id
 
-    profile_text = f"Профиль {mention_text}:\nРанк: {user_rank}\nБаланс Камней душ: {user_balance}\nСимволов в рп-чате: {total_symbols}"
+    profile_text = (
+        f"👤 Профиль {mention_text}:\n"
+        f"🎖 Ранк: {user_rank}\n"
+        f"💵 Баланс 💎 Камней душ: {user_balance}\n"
+        f"🔣 Символов в рп-чате: {total_symbols}\n"
+        f"✉️ Сообщений в флуд-чате: {second_chat_message_count}"  # Add this line
+    )
 
     buttons = [
         [InlineKeyboardButton("Баланс", callback_data="balance")],
