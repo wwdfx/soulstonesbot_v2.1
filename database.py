@@ -32,6 +32,11 @@ def reconnect_db(func):
             return await func(*args, **kwargs)
     return wrapper
 
+@reconnect_db
+async def set_user_role(user_id, role):
+    cur.execute('INSERT INTO users (user_id, role) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET role = %s', (user_id, role, role))
+    conn.commit()
+
 # Create tables if they do not exist
 cur.execute('''
     CREATE TABLE IF NOT EXISTS balances (
