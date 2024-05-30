@@ -25,89 +25,9 @@ def reconnect_db(func):
         global conn, cur
         try:
             return await func(*args, **kwargs)
-        except psycopg2.OperationalError:
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
             conn.close()
             conn = connect_db()
             cur = conn.cursor(cursor_factory=DictCursor)
             return await func(*args, **kwargs)
     return wrapper
-
-@reconnect_db
-async def set_user_role(user_id, role):
-    cur.execute('INSERT INTO users (user_id, role) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET role = %s', (user_id, role, role))
-    conn.commit()
-
-# Create tables if they do not exist
-cur.execute('''
-    CREATE TABLE IF NOT EXISTS balances (
-        user_id BIGINT PRIMARY KEY,
-        balance INTEGER NOT NULL DEFAULT 0
-    )
-''')
-
-cur.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        user_id BIGINT PRIMARY KEY,
-        role TEXT NOT NULL DEFAULT 'user'
-    )
-''')
-
-cur.execute('''
-    CREATE TABLE IF NOT EXISTS last_reading (
-        user_id BIGINT PRIMARY KEY,
-        last_request TIMESTAMP
-    )
-''')
-
-cur.execute('''
-    CREATE TABLE IF NOT EXISTS checkin_streak (
-        user_id BIGINT PRIMARY KEY,
-        streak INTEGER NOT NULL DEFAULT 0,
-        last_checkin TIMESTAMP
-    )
-''')
-
-cur.execute('''
-    CREATE TABLE IF NOT EXISTS last_game (
-        user_id BIGINT PRIMARY KEY,
-        last_play TIMESTAMP
-    )
-''')
-
-cur.execute('''
-    CREATE TABLE IF NOT EXISTS missions (
-        id SERIAL PRIMARY KEY,
-        name TEXT,
-        rarity TEXT,
-        appearing_rate INTEGER,
-        length INTEGER,
-        reward INTEGER
-    )
-''')
-
-cur.execute('''
-    CREATE TABLE IF NOT EXISTS user_missions (
-        user_id BIGINT,
-        mission_id INTEGER,
-        start_time TIMESTAMP,
-        end_time TIMESTAMP,
-        completed BOOLEAN DEFAULT FALSE,
-        PRIMARY KEY (user_id, mission_id, start_time)
-    )
-''')
-
-cur.execute('''
-    CREATE TABLE IF NOT EXISTS mission_attempts (
-        user_id BIGINT,
-        date DATE,
-        attempts INTEGER DEFAULT 0,
-        PRIMARY KEY (user_id, date)
-    )
-''')
-
-cur.execute('''
-    CREATE TABLE IF NOT EXISTS user_symbols (
-        user_id BIGINT PRIMARY KEY,
-        symbols_count INTEGER NOT NULL DEFAULT 0
-    )
-''')
