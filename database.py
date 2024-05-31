@@ -1,6 +1,14 @@
 import psycopg2
 from psycopg2.extras import DictCursor
 
+import psycopg2
+from psycopg2.extras import DictCursor
+import logging
+
+# Set up basic logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Database connection details
 DB_DETAILS = {
     "dbname": "koyebdb",
@@ -11,13 +19,19 @@ DB_DETAILS = {
 }
 
 # Connect to PostgreSQL Database
+conn = None
+cur = None
+
 def connect_db():
+    global conn, cur
+    if conn is not None:
+        conn.close()
     conn = psycopg2.connect(**DB_DETAILS)
     conn.autocommit = True
+    cur = conn.cursor(cursor_factory=DictCursor)
     return conn
 
-conn = connect_db()
-cur = conn.cursor(cursor_factory=DictCursor)
+connect_db()
 
 # Function to handle reconnection
 def reconnect_db(func):
@@ -25,20 +39,11 @@ def reconnect_db(func):
         global conn, cur
         try:
             return await func(*args, **kwargs)
-        except (psycopg2.OperationalError, psycopg2.InterfaceError):
+        except psycopg2.OperationalError:
             conn.close()
-            conn = connect_db()
-            cur = conn.cursor(cursor_factory=DictCursor)
+            connect_db()
             return await func(*args, **kwargs)
     return wrapper
-
-# Ensure message_counts table exists
-cur.execute('''
-    CREATE TABLE IF NOT EXISTS message_counts (
-        user_id BIGINT PRIMARY KEY,
-        message_count INTEGER NOT NULL DEFAULT 0
-    )
-''')
 
 @reconnect_db
 async def get_message_count(user_id):
