@@ -2,7 +2,7 @@ import logging
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ConversationHandler, JobQueue
 from handlers import *
 from utils import check_missions
-from database import reconnect_db
+from datetime import timedelta
 
 
 # Set up basic logging
@@ -41,7 +41,7 @@ app.add_handler(CallbackQueryHandler(reading_command, pattern='^reading$'))
 app.add_handler(CallbackQueryHandler(checkin_command, pattern='^checkin$'))
 app.add_handler(CallbackQueryHandler(rockpaperscissors_command, pattern='^rockpaperscissors$'))
 app.add_handler(CallbackQueryHandler(missions_command, pattern='^missions$'))
-app.add_handler(MessageHandler(filters.TEXT & filters.Chat(chat_id=-1001996636325), answer_handler))
+app.add_handler(MessageHandler(filters.TEXT & filters.Chat(chat_id=-1001996636325), answer_handler), group=-1001996636325)
 
 job_queue = app.job_queue
 job_queue.run_repeating(check_missions, interval=6000, first=6000)
