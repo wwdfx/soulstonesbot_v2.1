@@ -19,19 +19,22 @@ DB_DETAILS = {
 }
 
 # Connect to PostgreSQL Database
-conn = None
-cur = None
-
 def connect_db():
-    global conn, cur
-    if conn is not None:
-        conn.close()
     conn = psycopg2.connect(**DB_DETAILS)
     conn.autocommit = True
-    cur = conn.cursor(cursor_factory=DictCursor)
     return conn
 
-connect_db()
+conn = connect_db()
+cur = conn.cursor(cursor_factory=DictCursor)
+
+# Connect to PostgreSQL Database
+def connect_db():
+    conn = psycopg2.connect(**DB_DETAILS)
+    conn.autocommit = True
+    return conn
+
+conn = connect_db()
+cur = conn.cursor(cursor_factory=DictCursor)
 
 # Function to handle reconnection
 def reconnect_db(func):
@@ -41,7 +44,8 @@ def reconnect_db(func):
             return await func(*args, **kwargs)
         except psycopg2.OperationalError:
             conn.close()
-            connect_db()
+            conn = connect_db()
+            cur = conn.cursor(cursor_factory=DictCursor)
             return await func(*args, **kwargs)
     return wrapper
 
