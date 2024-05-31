@@ -20,23 +20,22 @@ async def send_question(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=chat_id, text=f"❓ Викторина! Ответьте на вопрос и получите 200 💎 Камней душ! Вопрос: {active_question['question']}")
 
     # Schedule repeating the question if not answered
-    context.job_queue.run_once(repeat_question, 3600, context=context)
+    context.job_queue.run_once(repeat_question, 3600, context=chat_id)
 
 @reconnect_db
 async def repeat_question(context: ContextTypes.DEFAULT_TYPE):
     global active_question
+    chat_id = context.job.context
     if active_question is not None:
-        chat_id = -1001996636325  # Second chat ID
         await context.bot.send_message(chat_id=chat_id, text=f"😢 Время вышло! Правильный ответ был: {active_question['answers'][0]}\n\nСледующий вопрос через 2 часа!")
         active_question = None  # Reset the active question
-        context.job_queue.run_once(send_question, 7200, context=context)
+        context.job_queue.run_once(send_question, 7200, context=chat_id)
 
 @reconnect_db
 async def start_quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Schedule the job to send a question immediately
-    job_queue = context.job_queue
     await send_question(context)
-    job_queue.run_once(repeat_question, 7200)  # 2 hours from now
+    context.job_queue.run_once(repeat_question, when=7200, context=-1001996636325)  # 2 hours from now
 
 @reconnect_db
 async def answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -44,7 +43,7 @@ async def answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if active_question is None:
         return
 
-    user_answer = update.message.text.strip()
+    user_answer = update.message.text
     correct_answers = [answer.lower() for answer in active_question['answers']]
 
     if user_answer in correct_answers:
@@ -57,7 +56,7 @@ async def answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         active_question = None  # Reset the active question
 
         # Schedule the next question in 2 hours
-        context.job_queue.run_once(send_question, 7200, context=context)
+        context.job_queue.run_once(send_question, 7200, context=-1001996636325)
 
 @reconnect_db
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
