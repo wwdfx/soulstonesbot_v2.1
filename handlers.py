@@ -7,7 +7,6 @@ import asyncio
 from database import *
 from models import get_balance, get_user_messages, get_user_role, get_user_symbols, reduce_balance, set_balance, update_balance
 from utils import can_request_reading, generate_missions, get_user_rank, reconnect_db, RANKS
-import random
 from questions import questions
 from datetime import datetime, timedelta
 
@@ -37,7 +36,7 @@ async def start_quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Schedule the job to send a question immediately
     job_queue = context.job_queue
     await send_question(context)
-    job_queue.run_once(repeat_question, when=7200)  # 2 hours from now
+    job_queue.run_once(repeat_question, 7200)  # 2 hours from now
 
 @reconnect_db
 async def answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -116,7 +115,7 @@ async def get_message_count(user_id, chat_id):
 @reconnect_db
 async def checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    today = datetime.datetime.now()
+    today = datetime.now()
     cur.execute('SELECT streak, last_checkin FROM checkin_streak WHERE user_id = %s', (user_id,))
     result = cur.fetchone()
 
@@ -129,7 +128,7 @@ async def checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # Check if the streak is broken
-        if today - last_checkin > datetime.timedelta(days=1):
+        if today - last_checkin > timedelta(days=1):
             streak = 1
             reward = 25
             image_path = 'img/lossStreak.png'
@@ -240,11 +239,11 @@ async def rockpaperscissors_command(update: Update, context: ContextTypes.DEFAUL
     user_id = update.message.from_user.id
     cur.execute('SELECT last_play FROM last_game WHERE user_id = %s', (user_id,))
     result = cur.fetchone()
-    now = datetime.datetime.now()
+    now = datetime.now()
 
     if result:
         last_play = result['last_play']
-        if now - last_play < datetime.timedelta(minutes=10):
+        if now - last_play < timedelta(minutes=10):
             await update.message.reply_text("⚠️ Вы можете играть только раз в 10 минут. Попробуйте позже.")
             return
 
@@ -510,3 +509,5 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Миссии", callback_data="missions")]
     ]
     keyboard = InlineKeyboardMarkup(buttons)
+
+    await update.message.reply_text(profile_text, reply_markup=keyboard)
