@@ -124,7 +124,7 @@ questions = [
     },
     {
         "question": "Как зовут домашнего кота Магнуса Бейна?",
-        "answers": ["Председатель Мяу","Председатель", "Мяу"]
+        "answers": ["Председатель Мяу","Председатель", "Мяу", "Черч", "Чёрч"]
     },
     {
         "question": "Как называется руна, которая связывает двух Сумеречных Охотников?",
@@ -230,6 +230,18 @@ questions = [
 ]
 
 active_question = None
+
+async def reconnect_db_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        # Close existing connection
+        conn.close()
+        # Reconnect
+        global conn, cur
+        conn = connect_db()
+        cur = conn.cursor(cursor_factory=DictCursor)
+        await update.message.reply_text("✅ Successfully reconnected to the database.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to reconnect to the database: {str(e)}")
 
 @reconnect_db
 async def send_question(context: ContextTypes.DEFAULT_TYPE):

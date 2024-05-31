@@ -3,7 +3,13 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 from handlers import *
 from utils import check_missions
 from datetime import timedelta
+from database import connect_db, DB_DETAILS
 
+# Connect to PostgreSQL Database
+def connect_db():
+    conn = psycopg2.connect(**DB_DETAILS)
+    conn.autocommit = True
+    return conn
 
 # Set up basic logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -32,6 +38,7 @@ app.add_handler(CommandHandler("setbalance", set_balance_command))
 app.add_handler(CommandHandler("missions", missions_command))
 app.add_handler(CommandHandler("profile", profile_command))
 app.add_handler(CommandHandler("startquiz", start_quiz_command))
+app.add_handler(CommandHandler("reconnectdb", reconnect_db_command))
 app.add_handler(conv_handler)
 app.add_handler(CallbackQueryHandler(bet_callback, pattern='^bet_'))
 app.add_handler(CallbackQueryHandler(play_callback, pattern='^play_'))
