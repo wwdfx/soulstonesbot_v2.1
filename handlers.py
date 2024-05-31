@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 
 active_question = None
 
+@reconnect_db
 async def send_question(context: ContextTypes.DEFAULT_TYPE):
     global active_question
     chat_id = -1001996636325  # Second chat ID
@@ -22,6 +23,7 @@ async def send_question(context: ContextTypes.DEFAULT_TYPE):
     # Schedule repeating the question if not answered
     context.job_queue.run_once(repeat_question, 3600, context=context)
 
+@reconnect_db
 async def repeat_question(context: ContextTypes.DEFAULT_TYPE):
     global active_question
     if active_question is not None:
@@ -30,6 +32,14 @@ async def repeat_question(context: ContextTypes.DEFAULT_TYPE):
         active_question = None  # Reset the active question
         context.job_queue.run_once(send_question, 7200, context=context)
 
+@reconnect_db
+async def start_quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Schedule the job to send a question immediately
+    job_queue = context.job_queue
+    await send_question(context)
+    job_queue.run_once(repeat_question, when=7200)  # 2 hours from now
+
+@reconnect_db
 async def answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global active_question
     if active_question is None:
