@@ -44,7 +44,7 @@ async def answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if active_question is None:
         return
 
-    user_answer = update.message.text.strip().lower()
+    user_answer = update.message.text.strip()
     correct_answers = [answer.lower() for answer in active_question['answers']]
 
     if user_answer in correct_answers:
