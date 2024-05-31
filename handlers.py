@@ -236,7 +236,6 @@ async def reconnect_db_command(update: Update, context: ContextTypes.DEFAULT_TYP
         # Close existing connection
         conn.close()
         # Reconnect
-        global conn, cur
         conn = connect_db()
         cur = conn.cursor(cursor_factory=DictCursor)
         await update.message.reply_text("✅ Successfully reconnected to the database.")
